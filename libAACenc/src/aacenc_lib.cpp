@@ -2025,6 +2025,7 @@ AACENC_ERROR aacEncEncode(const HANDLE_AACENCODER hAacEncoder,
   /*
    * Encode AAC - Core.
    */
+  fprintf(stderr, "[AAC DEBUG] Calling FDKaacEnc_EncodeFrame (core AAC encoder)\n");
   aac_err = FDKaacEnc_EncodeFrame(hAacEncoder->hAacEnc, hAacEncoder->hTpEnc,
                             hAacEncoder->inputBuffer,
                             hAacEncoder->inputBufferSizePerChannel, outBytes,
@@ -2033,6 +2034,7 @@ AACENC_ERROR aacEncEncode(const HANDLE_AACENCODER hAacEncoder,
     err = AACENC_ENCODE_ERROR;
     goto bail;
   }
+  fprintf(stderr, "[AAC DEBUG] FDKaacEnc_EncodeFrame succeeded\n");
 
   if (ancDataExtIdx >= 0) {
     outargs->numAncBytes =

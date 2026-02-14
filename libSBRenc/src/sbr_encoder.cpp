@@ -2399,6 +2399,7 @@ INT sbrEncoder_EncodeFrame(HANDLE_SBR_ENCODER hSbrEncoder, INT_PCM *samples,
 
   for (el = 0; el < hSbrEncoder->noElements; el++) {
     if (hSbrEncoder->sbrElement[el] != NULL) {
+      fprintf(stderr, "[SBR DEBUG] Encoding element %d\n", el);
       error = FDKsbrEnc_EnvEncodeFrame(
           hSbrEncoder, el,
           samples + hSbrEncoder->downsampledOffset / hSbrEncoder->nChannels,
@@ -2409,6 +2410,7 @@ INT sbrEncoder_EncodeFrame(HANDLE_SBR_ENCODER hSbrEncoder, INT_PCM *samples,
     }
   }
 
+  fprintf(stderr, "[SBR DEBUG] Calling FDKsbrEnc_Downsample\n");
   error = FDKsbrEnc_Downsample(
       hSbrEncoder,
       samples + hSbrEncoder->downsampledOffset / hSbrEncoder->nChannels,
