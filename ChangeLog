@@ -1,3 +1,27 @@
+2.0.3
+ - Minor upstream updates
+ - Fixed one case of a failed assert in SBR encoding
+ - Added build support for s390x
+
+2.0.2
+ - Minor upstream updates
+ - Lots of upstream and local fuzzing fixes
+ - Added CMake project files
+ - Removed the MSVC specific makefile
+
+2.0.1
+ - Minor release with a number of crash/fuzz fixes, primarily for the decoder
+
+2.0.0
+ - Major update in the upstream source base, with support for new
+   profiles and features, and numerous crash/fuzz fixes. The new
+   upstream version is referred to as FDKv2, thus skipping the
+   major version 1 and syncing the fdk-aac major version number to 2.
+
+0.1.6
+ - Lots of minor assorted crash/fuzz fixes, mostly for the decoder but
+   also some for the encoder
+
 0.1.5
  - Updated upstream sources
  - Fixed building with GCC 3.3 and 3.4

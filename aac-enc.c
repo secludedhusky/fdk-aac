@@ -37,6 +37,8 @@ void usage(const char* name) {
 	fprintf(stderr, "\t29\tHE-AAC v2\n");
 	fprintf(stderr, "\t23\tAAC-LD\n");
 	fprintf(stderr, "\t39\tAAC-ELD\n");
+	fprintf(stderr, "\t127\tHDC (HD Radio)\n");
+	fprintf(stderr, "\t128\tHDC-PS (HD Radio with Parametric Stereo)\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -129,7 +131,7 @@ int main(int argc, char *argv[]) {
 		}
 	}
 	if (aacEncoder_SetParam(handle, AACENC_SAMPLERATE, sample_rate) != AACENC_OK) {
-		fprintf(stderr, "Unable to set the AOT\n");
+		fprintf(stderr, "Unable to set the sample rate\n");
 		return 1;
 	}
 	if (aacEncoder_SetParam(handle, AACENC_CHANNELMODE, mode) != AACENC_OK) {
@@ -151,7 +153,7 @@ int main(int argc, char *argv[]) {
 			return 1;
 		}
 	}
-	if (aacEncoder_SetParam(handle, AACENC_TRANSMUX, 2) != AACENC_OK) {
+	if (aacEncoder_SetParam(handle, AACENC_TRANSMUX, TT_MP4_ADTS) != AACENC_OK) {
 		fprintf(stderr, "Unable to set the ADTS transmux\n");
 		return 1;
 	}
@@ -196,20 +198,17 @@ int main(int argc, char *argv[]) {
 			const uint8_t* in = &input_buf[2*i];
 			convert_buf[i] = in[0] | (in[1] << 8);
 		}
-		if (read <= 0) {
-			in_args.numInSamples = -1;
-		} else {
-			in_ptr = convert_buf;
-			in_size = read;
-			in_elem_size = 2;
+		in_ptr = convert_buf;
+		in_size = read;
+		in_elem_size = 2;
 
-			in_args.numInSamples = read/2;
-			in_buf.numBufs = 1;
-			in_buf.bufs = &in_ptr;
-			in_buf.bufferIdentifiers = &in_identifier;
-			in_buf.bufSizes = &in_size;
-			in_buf.bufElSizes = &in_elem_size;
-		}
+		in_args.numInSamples = read <= 0 ? -1 : read/2;
+		in_buf.numBufs = 1;
+		in_buf.bufs = &in_ptr;
+		in_buf.bufferIdentifiers = &in_identifier;
+		in_buf.bufSizes = &in_size;
+		in_buf.bufElSizes = &in_elem_size;
+
 		out_ptr = outbuf;
 		out_size = sizeof(outbuf);
 		out_elem_size = 1;
@@ -222,7 +221,7 @@ int main(int argc, char *argv[]) {
 		if ((err = aacEncEncode(handle, &in_buf, &out_buf, &in_args, &out_args)) != AACENC_OK) {
 			if (err == AACENC_ENCODE_EOF)
 				break;
-			fprintf(stderr, "Encoding failed\n");
+			fprintf(stderr, "Encoding failed with error code: 0x%04x\n", err);
 			return 1;
 		}
 		if (out_args.numOutBytes == 0)
