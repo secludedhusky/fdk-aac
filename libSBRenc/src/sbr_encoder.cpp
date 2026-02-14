@@ -229,9 +229,6 @@ static INT getSbrTuningTableIndex(
          found = 0;
   UINT bitRateClosestUpper = 0, bitRateClosestLower = DISTANCE_CEIL_VALUE;
 
-  fprintf(stderr, "[SBR TUNING] Looking for: bitrate=%u, channels=%u, sampleRate=%u, core AOT=%d\n",
-          bitrate, numChannels, sampleRate, core);
-
 #define isForThisCore(i)                                                     \
   ((sbrTuningTable[i].coreCoder == CODEC_AACLD && core == AOT_ER_AAC_ELD) || \
    (sbrTuningTable[i].coreCoder == CODEC_AAC && core != AOT_ER_AAC_ELD))
@@ -244,8 +241,6 @@ static INT getSbrTuningTableIndex(
         found = 1;
         if ((bitrate >= sbrTuningTable[i].bitrateFrom) &&
             (bitrate < sbrTuningTable[i].bitrateTo)) {
-          fprintf(stderr, "[SBR TUNING] MATCH FOUND at index %d: bitrate range %u-%u\n",
-                  i, sbrTuningTable[i].bitrateFrom, sbrTuningTable[i].bitrateTo);
           return i;
         } else {
           if (sbrTuningTable[i].bitrateFrom > bitrate) {
@@ -2163,16 +2158,12 @@ INT sbrEncoder_Init(HANDLE_SBR_ENCODER hSbrEncoder,
         continue;
       }
       /* check if desired configuration is available */
-      fprintf(stderr, "[SBR DEBUG INIT] Checking SBR settings: bitRate=%d, channels=%d, inputSR=%d, coreSR=%d, AOT=%d\n",
-              elInfo[coreEl].bitRate, elInfo[coreEl].nChannelsInEl, inputSampleRate, *coreSampleRate, aot);
       if (!FDKsbrEnc_IsSbrSettingAvail(elInfo[coreEl].bitRate, 0,
                                        elInfo[coreEl].nChannelsInEl,
                                        inputSampleRate, *coreSampleRate, aot)) {
-        fprintf(stderr, "[SBR DEBUG INIT] ERROR: SBR settings not available!\n");
         error = 1;
         goto bail;
       }
-      fprintf(stderr, "[SBR DEBUG INIT] SBR settings OK\n");
     }
 
     hSbrEncoder->nChannels = *numChannels;
@@ -2413,7 +2404,6 @@ INT sbrEncoder_EncodeFrame(HANDLE_SBR_ENCODER hSbrEncoder, INT_PCM *samples,
           samples + hSbrEncoder->downsampledOffset / hSbrEncoder->nChannels,
           samplesBufSize, &sbrDataBits[el], sbrData[el], 0);
       if (error) {
-        fprintf(stderr, "[SBR DEBUG] FDKsbrEnc_EnvEncodeFrame failed for element %d with error %d\n", el, error);
         return error;
       }
     }
@@ -2424,7 +2414,6 @@ INT sbrEncoder_EncodeFrame(HANDLE_SBR_ENCODER hSbrEncoder, INT_PCM *samples,
       samples + hSbrEncoder->downsampledOffset / hSbrEncoder->nChannels,
       samplesBufSize, hSbrEncoder->nChannels, &sbrDataBits[el], sbrData[el], 0);
   if (error) {
-    fprintf(stderr, "[SBR DEBUG] FDKsbrEnc_Downsample failed with error %d\n", error);
     return error;
   }
 

@@ -1996,7 +1996,6 @@ AACENC_ERROR aacEncEncode(const HANDLE_AACENCODER hAacEncoder,
                     &hAacEncoder->hAacEnc->channelMapping);
             if (hAacEncoder->extPayload[nExtensions].associatedChElement ==
                 -1) {
-              fprintf(stderr, "[AAC DEBUG] getAssociatedChElement failed for SBR element %d\n", i);
               err = AACENC_ENCODE_ERROR;
               goto bail;
             }
@@ -2031,7 +2030,6 @@ AACENC_ERROR aacEncEncode(const HANDLE_AACENCODER hAacEncoder,
                             hAacEncoder->inputBufferSizePerChannel, outBytes,
                             hAacEncoder->extPayload);
   if (aac_err != AAC_ENC_OK) {
-    fprintf(stderr, "[AAC DEBUG] FDKaacEnc_EncodeFrame FAILED with error code: %d\n", aac_err);
     err = AACENC_ENCODE_ERROR;
     goto bail;
   }
