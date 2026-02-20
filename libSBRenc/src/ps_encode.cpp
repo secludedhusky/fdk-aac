@@ -1029,3 +1029,251 @@ FDK_PSENC_ERROR FDKsbrEnc_PSEncode(
 
   return error;
 }
+
+/*
+ * DRM/HDC Parametric Stereo parameter extraction
+ *
+ * Extracts SA (Spatial Audio, 8 bands) and Pan (20 bands) indices from
+ * stereo hybrid data for DRM PS encoding. The SA parameter represents the
+ * decorrelated signal energy ratio, while Pan represents the L/R power balance.
+ */
+
+/* SA frequency band boundaries - maps SA band index to QMF channel */
+static const INT drm_sa_freq_scale[DRM_NUM_SA_BANDS + 1] = {
+    0, 1, 2, 3, 5, 7, 10, 13, 23};
+
+/* Pan frequency band boundaries - maps Pan band index to upper QMF channel */
+static const INT drm_pan_freq_scale[DRM_NUM_PAN_BANDS + 1] = {
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 18, 22, 26, 32,
+    64};
+
+/* SA quantization table: sa_quant[index][class], class 0 for band 0, class 1
+ * for bands 1-7. These are the fractional values the decoder uses. We quantize
+ * by finding the closest match. */
+static const FIXP_DBL drm_sa_quant_fx[8] = {
+    /* Using class 1 (bands 1-7) quantization targets, scaled to Q31 */
+    /* 0.0000, 0.1778, 0.2818, 0.4467, 0.5623, 0.7079, 0.8913, 1.0000 */
+    FL2FXCONST_DBL(0.0),     FL2FXCONST_DBL(0.1778),
+    FL2FXCONST_DBL(0.2818),  FL2FXCONST_DBL(0.4467),
+    FL2FXCONST_DBL(0.5623),  FL2FXCONST_DBL(0.7079),
+    FL2FXCONST_DBL(0.8913),  FL2FXCONST_DBL(0.999999)};
+
+static INT quantizeSaIndex(FIXP_DBL saRatio) {
+  /* saRatio is the ratio of side energy to total energy, range [0, 1) in Q31.
+   * Find the closest SA quantization index (0-7). */
+  INT bestIdx = 0;
+  FIXP_DBL bestDist = fAbs(saRatio - drm_sa_quant_fx[0]);
+  for (INT i = 1; i <= DRM_MAX_SA_INDEX; i++) {
+    FIXP_DBL dist = fAbs(saRatio - drm_sa_quant_fx[i]);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+static INT quantizePanIndex(FIXP_DBL panRatio) {
+  /* panRatio encodes L/R balance. We compute log2(pwrL/pwrR) and quantize.
+   * The decoder uses pan_quant[index][class] which represents exponents.
+   * For simplicity, we quantize the dB ratio to -7..+7 range. */
+  /* panRatio is in Q format representing 10*log10(L/R) approximately.
+   * Map to -7..+7 range. */
+  if (panRatio == (FIXP_DBL)0) return 0;
+
+  /* Convert fixed-point log ratio to integer index.
+   * The decoder's pan quantization steps are roughly 1.5-2 dB per step.
+   * We use approximately 2 dB per step → 14 dB range for ±7. */
+  INT panIdx;
+  /* panRatio is ld(pwrL/pwrR) in Q format, scale to index range */
+  FIXP_DBL scaledPan = fMult(panRatio, FL2FXCONST_DBL(0.5));
+  panIdx = (INT)(scaledPan >> (DFRACT_BITS - 1 - 4)); /* scale to ~±7 range */
+  panIdx = fixMin(panIdx, (INT)DRM_MAX_PAN_INDEX);
+  panIdx = fixMax(panIdx, (INT)(-DRM_MAX_PAN_INDEX));
+  return panIdx;
+}
+
+static INT countDrmHuffBits(const INT *data, INT nBands, const UINT *clTable,
+                            INT offset) {
+  INT bits = 0;
+  for (INT i = 0; i < nBands; i++) {
+    bits += (INT)clTable[data[i] + offset];
+  }
+  return bits;
+}
+
+FDK_PSENC_ERROR FDKsbrEnc_ExtractDrmPSParams(
+    HANDLE_PS_ENCODE hPsEncode, DRM_PS_OUT *drmPsOut,
+    INT *prevSaIndex, INT *prevPanIndex, INT *hadPrevSa, INT *hadPrevPan,
+    UCHAR *dynBandScale,
+    FIXP_DBL *hybridData[HYBRID_FRAMESIZE][MAX_PS_CHANNELS][2],
+    const INT frameSize) {
+  INT band, col, subband;
+
+  /* Compute per-QMF-band power for L and R channels across the whole frame */
+  FIXP_DBL pwrL[64];
+  FIXP_DBL pwrR[64];
+  FDKmemclear(pwrL, sizeof(pwrL));
+  FDKmemclear(pwrR, sizeof(pwrR));
+
+  /* Accumulate power across all time slots.
+   * Hybrid bands 0-9 map to QMF bands 0-2:
+   *   hybrid 0-5 → QMF 0, hybrid 6-7 → QMF 1, hybrid 8-9 → QMF 2
+   * Hybrid bands 10-70 → QMF bands 3-63 directly (offset by 7) */
+
+  for (col = 0; col < frameSize; col++) {
+    /* Process hybrid bands → accumulate into QMF band powers */
+    for (subband = 0; subband < MAX_HYBRID_BANDS; subband++) {
+      INT qmfBand;
+      if (subband < 6)
+        qmfBand = 0;
+      else if (subband < 8)
+        qmfBand = 1;
+      else if (subband < 10)
+        qmfBand = 2;
+      else
+        qmfBand = subband - 7; /* hybrid 10→qmf 3, hybrid 70→qmf 63 */
+
+      if (qmfBand >= 64) break;
+
+      FIXP_DBL l_real = hybridData[col][0][0][subband];
+      FIXP_DBL l_imag = hybridData[col][0][1][subband];
+      FIXP_DBL r_real = hybridData[col][1][0][subband];
+      FIXP_DBL r_imag = hybridData[col][1][1][subband];
+
+      pwrL[qmfBand] += (fPow2Div2(l_real) + fPow2Div2(l_imag)) >> 8;
+      pwrR[qmfBand] += (fPow2Div2(r_real) + fPow2Div2(r_imag)) >> 8;
+    }
+  }
+
+  /* Extract SA indices (8 bands) */
+  INT saIndex[DRM_NUM_SA_BANDS];
+  for (band = 0; band < DRM_NUM_SA_BANDS; band++) {
+    FIXP_DBL totalL = (FIXP_DBL)1; /* avoid div-by-zero */
+    FIXP_DBL totalR = (FIXP_DBL)1;
+    for (INT k = drm_sa_freq_scale[band]; k < drm_sa_freq_scale[band + 1];
+         k++) {
+      totalL += pwrL[k] >> 3;
+      totalR += pwrR[k] >> 3;
+    }
+
+    /* SA represents the side-signal ratio: side = (L-R)/2, mid = (L+R)/2
+     * saRatio ≈ |side|² / (|mid|² + |side|²)
+     * For simplicity: saRatio ≈ 1 - 2*min(L,R)/(L+R) */
+    FIXP_DBL minPwr = fixMin(totalL, totalR);
+    FIXP_DBL sumPwr = (totalL >> 1) + (totalR >> 1);
+    FIXP_DBL saRatio;
+    if (sumPwr > (FIXP_DBL)0) {
+      saRatio = (FIXP_DBL)MAXVAL_DBL - fDivNorm(minPwr, sumPwr);
+      saRatio = fixMax((FIXP_DBL)0, saRatio);
+    } else {
+      saRatio = (FIXP_DBL)0;
+    }
+    saIndex[band] = quantizeSaIndex(saRatio);
+  }
+
+  /* Extract Pan indices (20 bands) */
+  INT panIndex[DRM_NUM_PAN_BANDS];
+  for (band = 0; band < DRM_NUM_PAN_BANDS; band++) {
+    FIXP_DBL totalL = (FIXP_DBL)1;
+    FIXP_DBL totalR = (FIXP_DBL)1;
+    for (INT k = drm_pan_freq_scale[band]; k < drm_pan_freq_scale[band + 1];
+         k++) {
+      totalL += pwrL[k] >> 3;
+      totalR += pwrR[k] >> 3;
+    }
+
+    /* Pan = log2(L/R), quantized to -7..+7 */
+    INT panIdx = 0;
+    if (totalL > totalR) {
+      INT ld_exp;
+      FIXP_DBL ratio = fDivNorm(totalL, totalR, &ld_exp);
+      /* log2(ratio) = ld_exp + ld(mantissa) */
+      FIXP_DBL logRatio = (FIXP_DBL)((INT)CalcLdData(ratio) + (ld_exp << (DFRACT_BITS - 1 - LD_DATA_SHIFT)));
+      /* Scale: map log2 to pan index. Pan quant steps ≈ 0.33-1.33 in log2 domain.
+       * Use approximately 3 steps per doubling of power. */
+      panIdx = (INT)(logRatio >> (DFRACT_BITS - 1 - 3));
+      panIdx = fixMin(panIdx, (INT)DRM_MAX_PAN_INDEX);
+    } else if (totalR > totalL) {
+      INT ld_exp;
+      FIXP_DBL ratio = fDivNorm(totalR, totalL, &ld_exp);
+      FIXP_DBL logRatio = (FIXP_DBL)((INT)CalcLdData(ratio) + (ld_exp << (DFRACT_BITS - 1 - LD_DATA_SHIFT)));
+      panIdx = -(INT)(logRatio >> (DFRACT_BITS - 1 - 3));
+      panIdx = fixMax(panIdx, (INT)(-DRM_MAX_PAN_INDEX));
+    }
+    panIndex[band] = panIdx;
+  }
+
+  /* Delta encoding: choose between DF (frequency) and DT (time) modes */
+  /* Compute DF deltas */
+  INT saDeltaDF[DRM_NUM_SA_BANDS];
+  INT panDeltaDF[DRM_NUM_PAN_BANDS];
+
+  saDeltaDF[0] = saIndex[0];
+  for (band = 1; band < DRM_NUM_SA_BANDS; band++) {
+    saDeltaDF[band] = saIndex[band] - saIndex[band - 1];
+  }
+
+  panDeltaDF[0] = panIndex[0];
+  for (band = 1; band < DRM_NUM_PAN_BANDS; band++) {
+    panDeltaDF[band] = panIndex[band] - panIndex[band - 1];
+  }
+
+  /* SA: choose DF vs DT */
+  /* Import Huffman length tables for bit counting */
+  extern const UINT f_huffman_cl_sa[];
+  extern const UINT t_huffman_cl_sa[];
+  extern const UINT f_huffman_cl_pan[];
+  extern const UINT t_huffman_cl_pan[];
+
+  INT saDfBits = countDrmHuffBits(saDeltaDF, DRM_NUM_SA_BANDS,
+                                  f_huffman_cl_sa, 7);
+
+  drmPsOut->saDtFlag = 0; /* default to DF */
+  FDKmemcpy(drmPsOut->saData, saDeltaDF, sizeof(saDeltaDF));
+
+  if (*hadPrevSa) {
+    INT saDeltaDT[DRM_NUM_SA_BANDS];
+    for (band = 0; band < DRM_NUM_SA_BANDS; band++) {
+      saDeltaDT[band] = saIndex[band] - prevSaIndex[band];
+    }
+    INT saDtBits = countDrmHuffBits(saDeltaDT, DRM_NUM_SA_BANDS,
+                                    t_huffman_cl_sa, 7);
+    if (saDtBits < saDfBits) {
+      drmPsOut->saDtFlag = 1;
+      FDKmemcpy(drmPsOut->saData, saDeltaDT, sizeof(saDeltaDT));
+    }
+  }
+
+  /* Pan: choose DF vs DT */
+  INT panDfBits = countDrmHuffBits(panDeltaDF, DRM_NUM_PAN_BANDS,
+                                   f_huffman_cl_pan, 14);
+
+  drmPsOut->panDtFlag = 0;
+  FDKmemcpy(drmPsOut->panData, panDeltaDF, sizeof(panDeltaDF));
+
+  if (*hadPrevPan) {
+    INT panDeltaDT[DRM_NUM_PAN_BANDS];
+    for (band = 0; band < DRM_NUM_PAN_BANDS; band++) {
+      panDeltaDT[band] = panIndex[band] - prevPanIndex[band];
+    }
+    INT panDtBits = countDrmHuffBits(panDeltaDT, DRM_NUM_PAN_BANDS,
+                                     t_huffman_cl_pan, 14);
+    if (panDtBits < panDfBits) {
+      drmPsOut->panDtFlag = 1;
+      FDKmemcpy(drmPsOut->panData, panDeltaDT, sizeof(panDeltaDT));
+    }
+  }
+
+  /* Always enable both SA and Pan */
+  drmPsOut->enableSA = 1;
+  drmPsOut->enablePan = 1;
+
+  /* Save current indices for next frame's DT mode */
+  FDKmemcpy(prevSaIndex, saIndex, sizeof(saIndex));
+  FDKmemcpy(prevPanIndex, panIndex, sizeof(panIndex));
+  *hadPrevSa = 1;
+  *hadPrevPan = 1;
+
+  return PSENC_OK;
+}

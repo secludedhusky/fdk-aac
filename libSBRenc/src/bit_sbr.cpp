@@ -158,9 +158,11 @@ static INT writeSyntheticCodingData(HANDLE_SBR_ENV_DATA sbrEnvData,
                                     HANDLE_FDK_BITSTREAM hBitStream);
 
 static INT encodeExtendedData(HANDLE_PARAMETRIC_STEREO hParametricStereo,
-                              HANDLE_FDK_BITSTREAM hBitStream);
+                              HANDLE_FDK_BITSTREAM hBitStream,
+                              const UINT sbrSyntaxFlags);
 
-static INT getSbrExtendedDataSize(HANDLE_PARAMETRIC_STEREO hParametricStereo);
+static INT getSbrExtendedDataSize(HANDLE_PARAMETRIC_STEREO hParametricStereo,
+                                  const UINT sbrSyntaxFlags);
 
 /*****************************************************************************
 
@@ -434,7 +436,7 @@ static INT encodeSbrSingleChannelElement(
 
   payloadBits += writeSyntheticCodingData(sbrEnvData, hBitStream);
 
-  payloadBits += encodeExtendedData(hParametricStereo, hBitStream);
+  payloadBits += encodeExtendedData(hParametricStereo, hBitStream, sbrSyntaxFlags);
 
   return payloadBits;
 }
@@ -549,7 +551,7 @@ static INT encodeSbrChannelPairElement(
 
   } /* coupling */
 
-  payloadBits += encodeExtendedData(hParametricStereo, hBitStream);
+  payloadBits += encodeExtendedData(hParametricStereo, hBitStream, sbrSyntaxFlags);
 
   return payloadBits;
 }
@@ -948,11 +950,12 @@ static INT writeEnvelopeData(HANDLE_SBR_ENV_DATA sbrEnvData,
 
 *****************************************************************************/
 static INT encodeExtendedData(HANDLE_PARAMETRIC_STEREO hParametricStereo,
-                              HANDLE_FDK_BITSTREAM hBitStream) {
+                              HANDLE_FDK_BITSTREAM hBitStream,
+                              const UINT sbrSyntaxFlags) {
   INT extDataSize;
   INT payloadBits = 0;
 
-  extDataSize = getSbrExtendedDataSize(hParametricStereo);
+  extDataSize = getSbrExtendedDataSize(hParametricStereo, sbrSyntaxFlags);
 
   if (extDataSize != 0) {
     INT maxExtSize = (1 << SI_SBR_EXTENSION_SIZE_BITS) - 1;
@@ -973,10 +976,19 @@ static INT encodeExtendedData(HANDLE_PARAMETRIC_STEREO hParametricStereo,
 
     /* parametric coding signalled here? */
     if (hParametricStereo) {
-      writtenNoBits += FDKwriteBits(hBitStream, EXTENSION_ID_PS_CODING,
-                                    SI_SBR_EXTENSION_ID_BITS);
-      writtenNoBits +=
-          FDKsbrEnc_PSEnc_WritePSData(hParametricStereo, hBitStream);
+      if (sbrSyntaxFlags & SBR_SYNTAX_HDC) {
+        /* DRM/HDC PS: use DRM_PARAMETRIC_STEREO extension type */
+        writtenNoBits += FDKwriteBits(hBitStream, DRM_PARAMETRIC_STEREO,
+                                      SI_SBR_EXTENSION_ID_BITS);
+        writtenNoBits +=
+            FDKsbrEnc_PSEnc_WriteDrmPSData(hParametricStereo, hBitStream);
+      } else {
+        /* Standard AAC PS */
+        writtenNoBits += FDKwriteBits(hBitStream, EXTENSION_ID_PS_CODING,
+                                      SI_SBR_EXTENSION_ID_BITS);
+        writtenNoBits +=
+            FDKsbrEnc_PSEnc_WritePSData(hParametricStereo, hBitStream);
+      }
     }
 
     payloadBits += writtenNoBits;
@@ -1030,7 +1042,8 @@ static INT writeSyntheticCodingData(HANDLE_SBR_ENV_DATA sbrEnvData,
     output:
 
 *****************************************************************************/
-static INT getSbrExtendedDataSize(HANDLE_PARAMETRIC_STEREO hParametricStereo) {
+static INT getSbrExtendedDataSize(HANDLE_PARAMETRIC_STEREO hParametricStereo,
+                                  const UINT sbrSyntaxFlags) {
   INT extDataBits = 0;
 
   /* add your new extended data counting methods here */
@@ -1042,7 +1055,11 @@ static INT getSbrExtendedDataSize(HANDLE_PARAMETRIC_STEREO hParametricStereo) {
   if (hParametricStereo) {
     /* PS extended data */
     extDataBits += SI_SBR_EXTENSION_ID_BITS;
-    extDataBits += FDKsbrEnc_PSEnc_WritePSData(hParametricStereo, NULL);
+    if (sbrSyntaxFlags & SBR_SYNTAX_HDC) {
+      extDataBits += FDKsbrEnc_PSEnc_WriteDrmPSData(hParametricStereo, NULL);
+    } else {
+      extDataBits += FDKsbrEnc_PSEnc_WritePSData(hParametricStereo, NULL);
+    }
   }
 
   return (extDataBits + 7) >> 3;

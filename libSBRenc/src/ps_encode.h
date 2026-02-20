@@ -182,4 +182,11 @@ FDK_PSENC_ERROR FDKsbrEnc_PSEncode(
     FIXP_DBL *hybridData[HYBRID_FRAMESIZE][MAX_PS_CHANNELS][2],
     const INT frameSize, const INT sendHeader);
 
+FDK_PSENC_ERROR FDKsbrEnc_ExtractDrmPSParams(
+    HANDLE_PS_ENCODE hPsEncode, DRM_PS_OUT *drmPsOut,
+    INT *prevSaIndex, INT *prevPanIndex, INT *hadPrevSa, INT *hadPrevPan,
+    UCHAR *dynBandScale,
+    FIXP_DBL *hybridData[HYBRID_FRAMESIZE][MAX_PS_CHANNELS][2],
+    const INT frameSize);
+
 #endif

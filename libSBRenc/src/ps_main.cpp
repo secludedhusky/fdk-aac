@@ -234,6 +234,13 @@ FDK_PSENC_ERROR PSEnc_Init(HANDLE_PARAMETRIC_STEREO hParametricStereo,
     hParametricStereo->psOut[0].enablePSHeader =
         1; /* write ps header in first frame */
 
+    /* clear DRM PS state */
+    FDKmemclear(hParametricStereo->drmPsOut, sizeof(hParametricStereo->drmPsOut));
+    FDKmemclear(hParametricStereo->prevSaIndex, sizeof(hParametricStereo->prevSaIndex));
+    FDKmemclear(hParametricStereo->prevPanIndex, sizeof(hParametricStereo->prevPanIndex));
+    hParametricStereo->hadPrevSa = 0;
+    hParametricStereo->hadPrevPan = 0;
+
     /* clear scaling buffer */
     FDKmemclear(hParametricStereo->dynBandScale, sizeof(UCHAR) * PS_MAX_BANDS);
     FDKmemclear(hParametricStereo->maxBandValue,
@@ -265,7 +272,29 @@ static FDK_PSENC_ERROR ExtractPSParameters(
 
   if (hParametricStereo == NULL) {
     error = PSENC_INVALID_HANDLE;
+  } else if (hParametricStereo->isDrmPS) {
+    /* DRM/HDC PS path: extract SA and Pan parameters */
+    if (hParametricStereo->initPS) {
+      hParametricStereo->drmPsOut[1] = hParametricStereo->drmPsOut[0];
+    }
+    hParametricStereo->drmPsOut[0] = hParametricStereo->drmPsOut[1];
+
+    if (PSENC_OK !=
+        (error = FDKsbrEnc_ExtractDrmPSParams(
+             hParametricStereo->hPsEncode, &hParametricStereo->drmPsOut[1],
+             hParametricStereo->prevSaIndex, hParametricStereo->prevPanIndex,
+             &hParametricStereo->hadPrevSa, &hParametricStereo->hadPrevPan,
+             hParametricStereo->dynBandScale,
+             hybridData, hParametricStereo->noQmfSlots))) {
+      goto bail;
+    }
+
+    if (hParametricStereo->initPS) {
+      hParametricStereo->drmPsOut[0] = hParametricStereo->drmPsOut[1];
+      hParametricStereo->initPS = 0;
+    }
   } else {
+    /* Standard AAC PS path */
     /* call ps encode function */
     if (hParametricStereo->initPS) {
       hParametricStereo->psOut[1] = hParametricStereo->psOut[0];
@@ -456,6 +485,17 @@ INT FDKsbrEnc_PSEnc_WritePSData(HANDLE_PARAMETRIC_STEREO hParametricStereo,
       (hParametricStereo != NULL)
           ? FDKsbrEnc_WritePSBitstream(&hParametricStereo->psOut[0], hBitstream)
           : 0);
+}
+
+INT FDKsbrEnc_PSEnc_WriteDrmPSData(HANDLE_PARAMETRIC_STEREO hParametricStereo,
+                                    HANDLE_FDK_BITSTREAM hBitstream) {
+  if (hParametricStereo == NULL) return 0;
+  if (hBitstream != NULL) {
+    return FDKsbrEnc_WriteDrmPSBitstream(&hParametricStereo->drmPsOut[0],
+                                          hBitstream);
+  } else {
+    return FDKsbrEnc_GetDrmPSBitstreamSize(&hParametricStereo->drmPsOut[0]);
+  }
 }
 
 FDK_PSENC_ERROR FDKsbrEnc_PSEnc_ParametricStereoProcessing(

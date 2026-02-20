@@ -239,6 +239,7 @@ amm-info@iis.fraunhofer.de
 #define SBR_EXTENDED_DATA_MAX_CNT (15 + 255)
 
 #define EXTENSION_ID_PS_CODING 2
+#define DRM_PARAMETRIC_STEREO 0
 
 /* Envelope coding constants */
 #define FREQ 0

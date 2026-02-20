@@ -168,6 +168,14 @@ typedef struct T_PARAMETRIC_STEREO {
   FDK_ANA_HYB_FILTER fdkHybAnaFilter[MAX_PS_CHANNELS];
   FDK_SYN_HYB_FILTER fdkHybSynFilter;
 
+  /* DRM/HDC PS state */
+  INT isDrmPS;
+  DRM_PS_OUT drmPsOut[2];
+  INT prevSaIndex[DRM_NUM_SA_BANDS];
+  INT prevPanIndex[DRM_NUM_PAN_BANDS];
+  INT hadPrevSa;
+  INT hadPrevPan;
+
 } PARAMETRIC_STEREO;
 
 typedef struct T_PSENC_CONFIG {
@@ -266,5 +274,8 @@ FDK_PSENC_ERROR FDKsbrEnc_PSEnc_ParametricStereoProcessing(
  */
 INT FDKsbrEnc_PSEnc_WritePSData(HANDLE_PARAMETRIC_STEREO hParametricStereo,
                                 HANDLE_FDK_BITSTREAM hBitstream);
+
+INT FDKsbrEnc_PSEnc_WriteDrmPSData(HANDLE_PARAMETRIC_STEREO hParametricStereo,
+                                    HANDLE_FDK_BITSTREAM hBitstream);
 
 #endif /* PS_MAIN_H */

@@ -552,6 +552,113 @@ static INT encodePSExtension(const HANDLE_PS_OUT psOut,
   return (bitCnt);
 }
 
+/* DRM PS Huffman encoder tables - derived from faad2 drm_dec.c decoder trees */
+
+/* f_huffman_sa: frequency-domain SA encoding (15 entries, indexed by value+7) */
+static const UINT f_huffman_cw_sa[15] = {
+    0x007e, 0x007f, 0x003d, 0x003c, 0x001b,
+    0x000c, 0x000b, 0x0000, 0x000a, 0x001a,
+    0x001c, 0x003a, 0x003b, 0x003e, 0x0004};
+static const UINT f_huffman_cl_sa[15] = {7, 7, 6, 6, 5, 4, 4, 1, 4, 5, 5, 6, 6, 6, 3};
+
+/* t_huffman_sa: time-domain SA encoding (15 entries, indexed by value+7) */
+static const UINT t_huffman_cw_sa[15] = {
+    0x00fe, 0x007e, 0x007c, 0x003c, 0x001c,
+    0x000c, 0x0004, 0x0000, 0x0005, 0x000d,
+    0x001d, 0x003d, 0x007d, 0x01fe, 0x01ff};
+static const UINT t_huffman_cl_sa[15] = {8, 7, 7, 6, 5, 4, 3, 1, 3, 4, 5, 6, 7, 9, 9};
+
+/* f_huffman_pan: frequency-domain Pan encoding (29 entries, indexed by value+14) */
+static const UINT f_huffman_cw_pan[29] = {
+    0xfff4, 0x7ffc, 0xfff5, 0x7ffd, 0x1ffc,
+    0x3ffa, 0x0ffc, 0x01fe, 0x01fc, 0x00fc,
+    0x007c, 0x003c, 0x001c, 0x0002, 0x0000,
+    0x0006, 0x001d, 0x003d, 0x007d, 0x00fd,
+    0x01fd, 0x03fe, 0x0ffd, 0x3ffb, 0x3ffc,
+    0x7ffe, 0xfff6, 0x7fff, 0xfff7};
+static const UINT f_huffman_cl_pan[29] = {
+    16, 15, 16, 15, 13, 14, 12, 9, 9, 8, 7, 6, 5, 2, 1,
+    3,  5,  6,  7,  8,  9, 10, 12, 14, 14, 15, 16, 15, 16};
+
+/* t_huffman_pan: time-domain Pan encoding (29 entries, indexed by value+14) */
+static const UINT t_huffman_cw_pan[29] = {
+    0x3fff8, 0x3fff9, 0x3fffa, 0x3fffb, 0x7ffc,
+    0xfffc,  0x3ffc,  0x1ffc,  0x0ffc,  0x07fc,
+    0x00fe,  0x003e,  0x000e,  0x0002,  0x0000,
+    0x0006,  0x001e,  0x007e,  0x01fe,  0x07fd,
+    0x0ffd,  0x1ffd,  0x3ffd,  0xfffd,  0x7ffd,
+    0x3fffc, 0x3fffd, 0x3fffe, 0x3ffff};
+static const UINT t_huffman_cl_pan[29] = {
+    18, 18, 18, 18, 15, 16, 14, 13, 12, 11, 8, 6, 4, 2, 1,
+    3,  5,  7,  9, 11, 12, 13, 14, 16, 15, 18, 18, 18, 18};
+
+static INT encodeDrmHuffman(HANDLE_FDK_BITSTREAM hBitBuf, INT value,
+                            const UINT *cwTable, const UINT *clTable,
+                            INT offset) {
+  INT idx = value + offset;
+  if (hBitBuf != NULL) {
+    FDKwriteBits(hBitBuf, cwTable[idx], clTable[idx]);
+  }
+  return (INT)clTable[idx];
+}
+
+static INT encodeDrmSaElement(HANDLE_FDK_BITSTREAM hBitBuf,
+                              const DRM_PS_OUT *drmPsOut) {
+  INT bitCnt = 0;
+  INT band;
+  const UINT *cwTable =
+      drmPsOut->saDtFlag ? t_huffman_cw_sa : f_huffman_cw_sa;
+  const UINT *clTable =
+      drmPsOut->saDtFlag ? t_huffman_cl_sa : f_huffman_cl_sa;
+
+  bitCnt += FDKsbrEnc_WriteBits_ps(hBitBuf, drmPsOut->saDtFlag, 1);
+  for (band = 0; band < DRM_NUM_SA_BANDS; band++) {
+    bitCnt += encodeDrmHuffman(hBitBuf, drmPsOut->saData[band], cwTable,
+                               clTable, 7);
+  }
+  return bitCnt;
+}
+
+static INT encodeDrmPanElement(HANDLE_FDK_BITSTREAM hBitBuf,
+                               const DRM_PS_OUT *drmPsOut) {
+  INT bitCnt = 0;
+  INT band;
+  const UINT *cwTable =
+      drmPsOut->panDtFlag ? t_huffman_cw_pan : f_huffman_cw_pan;
+  const UINT *clTable =
+      drmPsOut->panDtFlag ? t_huffman_cl_pan : f_huffman_cl_pan;
+
+  bitCnt += FDKsbrEnc_WriteBits_ps(hBitBuf, drmPsOut->panDtFlag, 1);
+  for (band = 0; band < DRM_NUM_PAN_BANDS; band++) {
+    bitCnt += encodeDrmHuffman(hBitBuf, drmPsOut->panData[band], cwTable,
+                               clTable, 14);
+  }
+  return bitCnt;
+}
+
+INT FDKsbrEnc_WriteDrmPSBitstream(const DRM_PS_OUT *drmPsOut,
+                                   HANDLE_FDK_BITSTREAM hBitBuf) {
+  INT bitCnt = 0;
+  if (drmPsOut == NULL) return 0;
+
+  bitCnt += FDKsbrEnc_WriteBits_ps(hBitBuf, drmPsOut->enableSA, 1);
+  bitCnt += FDKsbrEnc_WriteBits_ps(hBitBuf, drmPsOut->enablePan, 1);
+
+  if (drmPsOut->enableSA) {
+    bitCnt += encodeDrmSaElement(hBitBuf, drmPsOut);
+  }
+
+  if (drmPsOut->enablePan) {
+    bitCnt += encodeDrmPanElement(hBitBuf, drmPsOut);
+  }
+
+  return bitCnt;
+}
+
+INT FDKsbrEnc_GetDrmPSBitstreamSize(const DRM_PS_OUT *drmPsOut) {
+  return FDKsbrEnc_WriteDrmPSBitstream(drmPsOut, NULL);
+}
+
 INT FDKsbrEnc_WritePSBitstream(const HANDLE_PS_OUT psOut,
                                HANDLE_FDK_BITSTREAM hBitBuf) {
   INT psExtEnable = 0;

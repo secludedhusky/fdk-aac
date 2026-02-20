@@ -2356,6 +2356,11 @@ INT sbrEncoder_Init(HANDLE_SBR_ENCODER hSbrEncoder,
                        hSbrEncoder->sbrElement[0]->sbrConfigData.noQmfSlots,
                        hSbrEncoder->sbrElement[0]->sbrConfigData.noQmfBands,
                        hSbrEncoder->dynamicRam);
+
+        /* Set DRM PS mode for HDC Parametric Stereo */
+        if (aot == AOT_HDC_PS) {
+          hSbrEncoder->hParametricStereo->isDrmPS = 1;
+        }
       }
     }
 

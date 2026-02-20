@@ -142,6 +142,15 @@ typedef struct T_PS_OUT {
 
 } PS_OUT, *HANDLE_PS_OUT;
 
+typedef struct T_DRM_PS_OUT {
+  INT enableSA;
+  INT enablePan;
+  INT saDtFlag;
+  INT panDtFlag;
+  INT saData[DRM_NUM_SA_BANDS];
+  INT panData[DRM_NUM_PAN_BANDS];
+} DRM_PS_OUT;
+
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
@@ -165,6 +174,11 @@ INT FDKsbrEnc_EncodeOpd(HANDLE_FDK_BITSTREAM hBitBuf, const INT *opdVal,
 
 INT FDKsbrEnc_WritePSBitstream(const HANDLE_PS_OUT psOut,
                                HANDLE_FDK_BITSTREAM hBitBuf);
+
+INT FDKsbrEnc_WriteDrmPSBitstream(const DRM_PS_OUT *drmPsOut,
+                                   HANDLE_FDK_BITSTREAM hBitBuf);
+
+INT FDKsbrEnc_GetDrmPSBitstreamSize(const DRM_PS_OUT *drmPsOut);
 
 #ifdef __cplusplus
 }

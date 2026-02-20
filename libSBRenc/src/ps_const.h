@@ -104,6 +104,13 @@ amm-info@iis.fraunhofer.de
 #define PS_CONST_H
 
 #define MAX_PS_CHANNELS (2)
+
+/* DRM/HDC Parametric Stereo constants */
+#define DRM_NUM_SA_BANDS 8
+#define DRM_NUM_PAN_BANDS 20
+#define DRM_MAX_SA_INDEX 7
+#define DRM_MAX_PAN_INDEX 7
+
 #define HYBRID_MAX_QMF_BANDS (3)
 #define HYBRID_FILTER_LENGTH (13)
 #define HYBRID_FILTER_DELAY ((HYBRID_FILTER_LENGTH - 1) / 2)
