@@ -559,14 +559,14 @@ static const UINT f_huffman_cw_sa[15] = {
     0x007e, 0x007f, 0x003d, 0x003c, 0x001b,
     0x000c, 0x000b, 0x0000, 0x000a, 0x001a,
     0x001c, 0x003a, 0x003b, 0x003e, 0x0004};
-const UINT f_huffman_cl_sa[15] = {7, 7, 6, 6, 5, 4, 4, 1, 4, 5, 5, 6, 6, 6, 3};
+static const UINT f_huffman_cl_sa[15] = {7, 7, 6, 6, 5, 4, 4, 1, 4, 5, 5, 6, 6, 6, 3};
 
 /* t_huffman_sa: time-domain SA encoding (15 entries, indexed by value+7) */
 static const UINT t_huffman_cw_sa[15] = {
     0x00fe, 0x007e, 0x007c, 0x003c, 0x001c,
     0x000c, 0x0004, 0x0000, 0x0005, 0x000d,
     0x001d, 0x003d, 0x007d, 0x01fe, 0x01ff};
-const UINT t_huffman_cl_sa[15] = {8, 7, 7, 6, 5, 4, 3, 1, 3, 4, 5, 6, 7, 9, 9};
+static const UINT t_huffman_cl_sa[15] = {8, 7, 7, 6, 5, 4, 3, 1, 3, 4, 5, 6, 7, 9, 9};
 
 /* f_huffman_pan: frequency-domain Pan encoding (29 entries, indexed by value+14) */
 static const UINT f_huffman_cw_pan[29] = {
@@ -576,7 +576,7 @@ static const UINT f_huffman_cw_pan[29] = {
     0x0006, 0x001d, 0x003d, 0x007d, 0x00fd,
     0x01fd, 0x03fe, 0x0ffd, 0x3ffb, 0x3ffc,
     0x7ffe, 0xfff6, 0x7fff, 0xfff7};
-const UINT f_huffman_cl_pan[29] = {
+static const UINT f_huffman_cl_pan[29] = {
     16, 15, 16, 15, 13, 14, 12, 9, 9, 8, 7, 6, 5, 2, 1,
     3,  5,  6,  7,  8,  9, 10, 12, 14, 14, 15, 16, 15, 16};
 
@@ -588,7 +588,7 @@ static const UINT t_huffman_cw_pan[29] = {
     0x0006,  0x001e,  0x007e,  0x01fe,  0x07fd,
     0x0ffd,  0x1ffd,  0x3ffd,  0xfffd,  0x7ffd,
     0x3fffc, 0x3fffd, 0x3fffe, 0x3ffff};
-const UINT t_huffman_cl_pan[29] = {
+static const UINT t_huffman_cl_pan[29] = {
     18, 18, 18, 18, 15, 16, 14, 13, 12, 11, 8, 6, 4, 2, 1,
     3,  5,  7,  9, 11, 12, 13, 14, 16, 15, 18, 18, 18, 18};
 
@@ -657,6 +657,26 @@ INT FDKsbrEnc_WriteDrmPSBitstream(const DRM_PS_OUT *drmPsOut,
 
 INT FDKsbrEnc_GetDrmPSBitstreamSize(const DRM_PS_OUT *drmPsOut) {
   return FDKsbrEnc_WriteDrmPSBitstream(drmPsOut, NULL);
+}
+
+INT FDKsbrEnc_CountDrmSaHuffBits(const INT *data, INT nBands, INT dtFlag) {
+  const UINT *clTable = dtFlag ? t_huffman_cl_sa : f_huffman_cl_sa;
+  INT bits = 0;
+  for (INT i = 0; i < nBands; i++) {
+    INT idx = data[i] + 7;
+    if (idx >= 0 && idx < 15) bits += (INT)clTable[idx];
+  }
+  return bits;
+}
+
+INT FDKsbrEnc_CountDrmPanHuffBits(const INT *data, INT nBands, INT dtFlag) {
+  const UINT *clTable = dtFlag ? t_huffman_cl_pan : f_huffman_cl_pan;
+  INT bits = 0;
+  for (INT i = 0; i < nBands; i++) {
+    INT idx = data[i] + 14;
+    if (idx >= 0 && idx < 29) bits += (INT)clTable[idx];
+  }
+  return bits;
 }
 
 INT FDKsbrEnc_WritePSBitstream(const HANDLE_PS_OUT psOut,

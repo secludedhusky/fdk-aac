@@ -1,0 +1,26 @@
+Determining if the function sin exists failed with the following output:
+Change Dir: /home/gnuradio/fdk-aac-2.0.3-hdc/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_7779d/fast && /usr/bin/make -f CMakeFiles/cmTC_7779d.dir/build.make CMakeFiles/cmTC_7779d.dir/build
+make[1]: Entering directory '/home/gnuradio/fdk-aac-2.0.3-hdc/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_7779d.dir/CheckFunctionExists.c.o
+/usr/bin/cc   -DCHECK_FUNCTION_EXISTS=sin   -o CMakeFiles/cmTC_7779d.dir/CheckFunctionExists.c.o   -c /usr/share/cmake-3.16/Modules/CheckFunctionExists.c
+<command-line>: warning: conflicting types for built-in function ‘sin’; expected ‘double(double)’ [-Wbuiltin-declaration-mismatch]
+/usr/share/cmake-3.16/Modules/CheckFunctionExists.c:7:3: note: in expansion of macro ‘CHECK_FUNCTION_EXISTS’
+    7 |   CHECK_FUNCTION_EXISTS(void);
+      |   ^~~~~~~~~~~~~~~~~~~~~
+/usr/share/cmake-3.16/Modules/CheckFunctionExists.c:1:1: note: ‘sin’ is declared in header ‘<math.h>’
+  +++ |+#include <math.h>
+    1 | #ifdef CHECK_FUNCTION_EXISTS
+Linking C executable cmTC_7779d
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_7779d.dir/link.txt --verbose=1
+/usr/bin/cc  -DCHECK_FUNCTION_EXISTS=sin    CMakeFiles/cmTC_7779d.dir/CheckFunctionExists.c.o  -o cmTC_7779d 
+/usr/bin/ld: CMakeFiles/cmTC_7779d.dir/CheckFunctionExists.c.o: in function `main':
+CheckFunctionExists.c:(.text+0x14): undefined reference to `sin'
+collect2: error: ld returned 1 exit status
+make[1]: *** [CMakeFiles/cmTC_7779d.dir/build.make:87: cmTC_7779d] Error 1
+make[1]: Leaving directory '/home/gnuradio/fdk-aac-2.0.3-hdc/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_7779d/fast] Error 2
+
+
+

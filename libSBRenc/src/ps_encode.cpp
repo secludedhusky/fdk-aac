@@ -1073,35 +1073,6 @@ static INT quantizeSaIndex(FIXP_DBL saRatio) {
   return bestIdx;
 }
 
-static INT quantizePanIndex(FIXP_DBL panRatio) {
-  /* panRatio encodes L/R balance. We compute log2(pwrL/pwrR) and quantize.
-   * The decoder uses pan_quant[index][class] which represents exponents.
-   * For simplicity, we quantize the dB ratio to -7..+7 range. */
-  /* panRatio is in Q format representing 10*log10(L/R) approximately.
-   * Map to -7..+7 range. */
-  if (panRatio == (FIXP_DBL)0) return 0;
-
-  /* Convert fixed-point log ratio to integer index.
-   * The decoder's pan quantization steps are roughly 1.5-2 dB per step.
-   * We use approximately 2 dB per step → 14 dB range for ±7. */
-  INT panIdx;
-  /* panRatio is ld(pwrL/pwrR) in Q format, scale to index range */
-  FIXP_DBL scaledPan = fMult(panRatio, FL2FXCONST_DBL(0.5));
-  panIdx = (INT)(scaledPan >> (DFRACT_BITS - 1 - 4)); /* scale to ~±7 range */
-  panIdx = fixMin(panIdx, (INT)DRM_MAX_PAN_INDEX);
-  panIdx = fixMax(panIdx, (INT)(-DRM_MAX_PAN_INDEX));
-  return panIdx;
-}
-
-static INT countDrmHuffBits(const INT *data, INT nBands, const UINT *clTable,
-                            INT offset) {
-  INT bits = 0;
-  for (INT i = 0; i < nBands; i++) {
-    bits += (INT)clTable[data[i] + offset];
-  }
-  return bits;
-}
-
 FDK_PSENC_ERROR FDKsbrEnc_ExtractDrmPSParams(
     HANDLE_PS_ENCODE hPsEncode, DRM_PS_OUT *drmPsOut,
     INT *prevSaIndex, INT *prevPanIndex, INT *hadPrevSa, INT *hadPrevPan,
@@ -1159,12 +1130,14 @@ FDK_PSENC_ERROR FDKsbrEnc_ExtractDrmPSParams(
 
     /* SA represents the side-signal ratio: side = (L-R)/2, mid = (L+R)/2
      * saRatio ≈ |side|² / (|mid|² + |side|²)
-     * For simplicity: saRatio ≈ 1 - 2*min(L,R)/(L+R) */
-    FIXP_DBL minPwr = fixMin(totalL, totalR);
-    FIXP_DBL sumPwr = (totalL >> 1) + (totalR >> 1);
+     * For simplicity: saRatio ≈ 1 - 2*min(L,R)/(L+R) = 1 - min/(sum/2)  */
+    FIXP_DBL sumHalf = (totalL >> 1) + (totalR >> 1);
     FIXP_DBL saRatio;
-    if (sumPwr > (FIXP_DBL)0) {
-      saRatio = (FIXP_DBL)MAXVAL_DBL - fDivNorm(minPwr, sumPwr);
+    if (sumHalf > (FIXP_DBL)1) {
+      FIXP_DBL minPwr = fixMin(totalL >> 1, totalR >> 1);
+      /* min/(sum/2) is in [0, 1). saRatio = 1 - min/(sum/2). */
+      FIXP_DBL minOverHalfSum = fDivNorm(minPwr, sumHalf);
+      saRatio = (FIXP_DBL)MAXVAL_DBL - minOverHalfSum;
       saRatio = fixMax((FIXP_DBL)0, saRatio);
     } else {
       saRatio = (FIXP_DBL)0;
@@ -1183,22 +1156,25 @@ FDK_PSENC_ERROR FDKsbrEnc_ExtractDrmPSParams(
       totalR += pwrR[k] >> 3;
     }
 
-    /* Pan = log2(L/R), quantized to -7..+7 */
+    /* Pan = quantized L/R balance, range -7..+7.
+     * Use power ratio directly: compute L/(L+R), which is in [0, 1].
+     * Center (L=R) → 0.5 → panIdx = 0.
+     * Fully left → 1.0 → panIdx = +7, fully right → 0.0 → panIdx = -7. */
     INT panIdx = 0;
-    if (totalL > totalR) {
-      INT ld_exp;
-      FIXP_DBL ratio = fDivNorm(totalL, totalR, &ld_exp);
-      /* log2(ratio) = ld_exp + ld(mantissa) */
-      FIXP_DBL logRatio = (FIXP_DBL)((INT)CalcLdData(ratio) + (ld_exp << (DFRACT_BITS - 1 - LD_DATA_SHIFT)));
-      /* Scale: map log2 to pan index. Pan quant steps ≈ 0.33-1.33 in log2 domain.
-       * Use approximately 3 steps per doubling of power. */
-      panIdx = (INT)(logRatio >> (DFRACT_BITS - 1 - 3));
+    FIXP_DBL sumPan = (totalL >> 1) + (totalR >> 1);
+    if (sumPan > (FIXP_DBL)1) {
+      /* Compute L/(L+R) ≈ (L/2) / ((L+R)/2) as FIXP_DBL in [0, ~1) */
+      FIXP_DBL lRatio = fDivNorm(totalL >> 1, sumPan);
+      /* lRatio = 0.5 means center. Map [0,1] → [-7, +7]:
+       * panIdx = round((lRatio - 0.5) * 14)
+       * = round(lRatio * 14 - 7)
+       * In fixed point: (lRatio - 0.5) is in [-0.5, 0.5).
+       * Multiply by 14 and extract integer part. */
+      FIXP_DBL centered = lRatio - FL2FXCONST_DBL(0.5);
+      /* centered * 14, shift to get integer. 14 in Q27 = 14 * 2^27 */
+      FIXP_DBL scaled = fMult(centered, FL2FXCONST_DBL(0.875)); /* 14/16 = 0.875 */
+      panIdx = (INT)(scaled >> (DFRACT_BITS - 1 - 4)); /* * 16 to get integer 14 */
       panIdx = fixMin(panIdx, (INT)DRM_MAX_PAN_INDEX);
-    } else if (totalR > totalL) {
-      INT ld_exp;
-      FIXP_DBL ratio = fDivNorm(totalR, totalL, &ld_exp);
-      FIXP_DBL logRatio = (FIXP_DBL)((INT)CalcLdData(ratio) + (ld_exp << (DFRACT_BITS - 1 - LD_DATA_SHIFT)));
-      panIdx = -(INT)(logRatio >> (DFRACT_BITS - 1 - 3));
       panIdx = fixMax(panIdx, (INT)(-DRM_MAX_PAN_INDEX));
     }
     panIndex[band] = panIdx;
@@ -1220,14 +1196,7 @@ FDK_PSENC_ERROR FDKsbrEnc_ExtractDrmPSParams(
   }
 
   /* SA: choose DF vs DT */
-  /* Import Huffman length tables for bit counting */
-  extern const UINT f_huffman_cl_sa[];
-  extern const UINT t_huffman_cl_sa[];
-  extern const UINT f_huffman_cl_pan[];
-  extern const UINT t_huffman_cl_pan[];
-
-  INT saDfBits = countDrmHuffBits(saDeltaDF, DRM_NUM_SA_BANDS,
-                                  f_huffman_cl_sa, 7);
+  INT saDfBits = FDKsbrEnc_CountDrmSaHuffBits(saDeltaDF, DRM_NUM_SA_BANDS, 0);
 
   drmPsOut->saDtFlag = 0; /* default to DF */
   FDKmemcpy(drmPsOut->saData, saDeltaDF, sizeof(saDeltaDF));
@@ -1237,8 +1206,7 @@ FDK_PSENC_ERROR FDKsbrEnc_ExtractDrmPSParams(
     for (band = 0; band < DRM_NUM_SA_BANDS; band++) {
       saDeltaDT[band] = saIndex[band] - prevSaIndex[band];
     }
-    INT saDtBits = countDrmHuffBits(saDeltaDT, DRM_NUM_SA_BANDS,
-                                    t_huffman_cl_sa, 7);
+    INT saDtBits = FDKsbrEnc_CountDrmSaHuffBits(saDeltaDT, DRM_NUM_SA_BANDS, 1);
     if (saDtBits < saDfBits) {
       drmPsOut->saDtFlag = 1;
       FDKmemcpy(drmPsOut->saData, saDeltaDT, sizeof(saDeltaDT));
@@ -1246,8 +1214,7 @@ FDK_PSENC_ERROR FDKsbrEnc_ExtractDrmPSParams(
   }
 
   /* Pan: choose DF vs DT */
-  INT panDfBits = countDrmHuffBits(panDeltaDF, DRM_NUM_PAN_BANDS,
-                                   f_huffman_cl_pan, 14);
+  INT panDfBits = FDKsbrEnc_CountDrmPanHuffBits(panDeltaDF, DRM_NUM_PAN_BANDS, 0);
 
   drmPsOut->panDtFlag = 0;
   FDKmemcpy(drmPsOut->panData, panDeltaDF, sizeof(panDeltaDF));
@@ -1257,8 +1224,7 @@ FDK_PSENC_ERROR FDKsbrEnc_ExtractDrmPSParams(
     for (band = 0; band < DRM_NUM_PAN_BANDS; band++) {
       panDeltaDT[band] = panIndex[band] - prevPanIndex[band];
     }
-    INT panDtBits = countDrmHuffBits(panDeltaDT, DRM_NUM_PAN_BANDS,
-                                     t_huffman_cl_pan, 14);
+    INT panDtBits = FDKsbrEnc_CountDrmPanHuffBits(panDeltaDT, DRM_NUM_PAN_BANDS, 1);
     if (panDtBits < panDfBits) {
       drmPsOut->panDtFlag = 1;
       FDKmemcpy(drmPsOut->panData, panDeltaDT, sizeof(panDeltaDT));

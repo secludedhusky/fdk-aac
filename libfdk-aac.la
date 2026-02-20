@@ -5,10 +5,10 @@
 # It is necessary for linking the library.
 
 # The name that we can dlopen(3).
-dlname=''
+dlname='libfdk-aac.so.2'
 
 # Names of this library.
-library_names=''
+library_names='libfdk-aac.so.2.0.3 libfdk-aac.so.2 libfdk-aac.so'
 
 # The name of the static archive.
 old_library='libfdk-aac.a'
@@ -38,4 +38,4 @@ dlopen=''
 dlpreopen=''
 
 # Directory that this library needs to be installed in:
-libdir='/home/gnuradio/fdk-aac-2.0.3-hdc/lib'
+libdir='/usr/local/lib'

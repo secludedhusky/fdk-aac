@@ -180,6 +180,9 @@ INT FDKsbrEnc_WriteDrmPSBitstream(const DRM_PS_OUT *drmPsOut,
 
 INT FDKsbrEnc_GetDrmPSBitstreamSize(const DRM_PS_OUT *drmPsOut);
 
+INT FDKsbrEnc_CountDrmSaHuffBits(const INT *data, INT nBands, INT dtFlag);
+INT FDKsbrEnc_CountDrmPanHuffBits(const INT *data, INT nBands, INT dtFlag);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
